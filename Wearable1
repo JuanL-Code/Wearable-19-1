@@ -1,0 +1,235 @@
+#include "DHT.h"   // incluir la biblioteca del sensor DHT11
+#include "Adafruit_Sensor.h"
+#include "ThingSpeak.h" // Include ThingSpeak Library
+#include <ESP8266WiFi.h> // Include ESP8266wifi Library
+#include "LedControl.h"
+
+
+
+//variables actuador
+int rojo = 6;
+int azul = 3;
+int verde = 5;
+int r = 0;
+int v = 0;
+int a = 0;
+
+#define DHTTYPE DHT11       // Indicar el tipo de sensor, DHT 11 en nuestro caso
+
+#define dht_dpin 0         // Indicar el pin en el que conectamos el sensor
+DHT dht(dht_dpin, DHTTYPE); // Inicializar el sensor
+
+int UpperThreshold = 518;
+int LowerThreshold = 490;
+int reading = 0;
+float BPM = 0.0;
+float pulsoC=0.0;
+bool IgnoreReading = false;
+bool FirstPulseDetected = false;
+unsigned long FirstPulseTime = 0;
+unsigned long SecondPulseTime = 0;
+unsigned long PulseInterval = 0;
+const unsigned long delayTime = 10; 
+const unsigned long delayTime2 = 1000;
+const unsigned long baudRate = 115200;
+unsigned long previousMillis = 0;
+unsigned long previousMillis2 = 0;
+
+
+int pinLM35 = 1; // Variable del pin de entrada del sensor (A0)
+//actuador
+int tempC=0;
+
+char ssid[] = "matec123"; // Nombre del WiFi (nombre del router)
+char pass[] = "Ameditar"; // WiFi router password
+unsigned long myChannelNumber = 783569; // Thingspeak número de canal
+const char * myWriteAPIKey = "JGM0565HHVEO5NTR"; // ThingSpeak write API Key
+//no tocar
+int status = WL_IDLE_STATUS;
+
+WiFiClient client;
+
+
+void setup() {
+  // PREPARAR LA COMUNICACION SERIAL
+  Serial.begin(115200);
+  Serial.println("Prueba del sensor DHT11");
+  Serial.begin(baudRate);
+  Serial.println("Prueba Sensor cardiaco");
+  
+  // PREPARAR LA LIBRERIA PARA COMUNICARSE CON EL SENSOR
+  dht.begin();
+  //pin mode del sensor cardiaco
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+
+//NO TOCAR
+WiFi.begin(ssid, pass); // Inicia WiFi
+ThingSpeak.begin(client); // Inicia ThingSpeak
+
+
+Serial.begin(115200); // Velocidad puerto serie
+
+Serial.println();
+Serial.print("Conectando a ");
+Serial.print(ssid);
+
+while (WiFi.status() != WL_CONNECTED)
+{
+delay(500);
+Serial.print(".");
+}
+
+Serial.println();
+Serial.println("Conectado a WiFi");
+Serial.print("Dirección IP: ");
+Serial.println(WiFi.localIP());
+
+
+
+
+  
+}
+
+void loop() {
+  // ESPERAR ENTRE MEDICIONES, NECESARIO PARA EL BUEN FUNCIONAMIENTO
+  delay(2000);
+  
+  // LEER LA HUMEDAD USANDO EL METRODO READHUMIDITY
+  float h = dht.readHumidity();
+  // LEER LA TEMPERATURA USANDO EL METRODO READTEMPERATURE
+  float t = dht.readTemperature();
+ 
+  // REVISAR QUE LOS RESULTADOS SEAN VALORES NUMERICOS VALIDOS, INDICANDO QUE LA COMUNICACION ES CORRECTA
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Falla al leer el sensor DHT11!");
+    return;
+  }
+ 
+  // IMPRIMIR RESULTADO AL MONITOR SERIAL
+  Serial.print("Humedad: ");
+  Serial.print(h);
+  Serial.print(" % ");
+  Serial.print("Temperatura: ");
+  Serial.print(t);
+  Serial.println(" *C");
+
+// Get current time
+  unsigned long currentMillis = millis();
+
+  // First event
+  if(myTimer1(delayTime, currentMillis) == 1){
+
+    reading = analogRead(0); 
+
+    // Heart beat leading edge detected.
+    if(reading > UpperThreshold && IgnoreReading == false){
+      if(FirstPulseDetected == false){
+        FirstPulseTime = millis();
+        FirstPulseDetected = true;
+      }
+           else{
+        SecondPulseTime = millis();
+        PulseInterval = SecondPulseTime - FirstPulseTime;
+        FirstPulseTime = SecondPulseTime;
+      }
+      IgnoreReading = true;
+      digitalWrite(LED_BUILTIN, HIGH);
+    }
+
+    // Heart beat trailing edge detected.
+    if(reading < LowerThreshold && IgnoreReading == true){
+      IgnoreReading = false;
+      digitalWrite(LED_BUILTIN, LOW);
+    }  
+
+    // Calculate Beats Per Minute.
+    BPM = (1.0/PulseInterval) * 60.0 * 100;
+  }
+
+  // Second event
+  if(myTimer2(delayTime2, currentMillis) == 1){
+    Serial.print(reading);
+    Serial.print("\t");
+    Serial.print(PulseInterval);
+    Serial.print("\t");
+    Serial.print(BPM);
+    Serial.println(" BPM");
+    Serial.flush();
+  }
+}
+
+// First event timer
+int myTimer1(long delayTime, long currentMillis){
+  if(currentMillis - previousMillis >= delayTime){previousMillis = currentMillis;return 
+    else{return 0;}
+}
+
+// Second event timer
+int myTimer2(long delayTime2, long currentMillis){
+  if(currentMillis - previousMillis2 >= delayTime2){previousMillis2 = currentMillis;return 1;}
+  else{return 0;}
+
+  // Con analogRead leemos el sensor, recuerda que es un valor de 0 a 1023
+  //No se supone que temperatura no esta en el analogo? 
+  tempC = analogRead(pinLM35); 
+  Serial.println(tempC);
+  // Calculamos la temperatura con la fórmula
+  tempC = ((5.0 * tempC * 100.0)/1024.0)*8; 
+
+
+
+Serial.print("Temperatura Y Humedad:");
+Serial.print(tempC);
+Serial.println(" *C\t ");
+//Modulo actuador
+int r2,v2,a2;
+if(tempC>=28){
+   r2 = 255;
+    v2 = 0;
+    a2 = 0;
+}else if(tempC<28){
+   r2 = 0;
+    v2 = 0;
+    a2 = 255;
+}
+
+
+
+
+
+
+
+
+
+
+ //Como poner los pines y las variables de puslo 
+  //Debo calcular el pulso y guardarlo en una variable llamada pulsoC
+Serial.print("Pulso");
+Serial.print(BPM);
+Serial.println(" *C\t ");
+
+// Carga los valores a enviar pulso
+ThingSpeak.setField(1, tempC);
+ThingSpeak.setField(2, BPM);
+
+
+
+
+
+
+// Escribe todos los campos a la vez.
+ThingSpeak.writeFields(myChannelNumber, myWriteAPIKey);
+
+Serial.println(" datos enviados a Thinkspeak ");
+
+
+// Añadimos un retraso para limtitar el número de escrituras en Thinhspeak
+
+delay(1000);
+  
+
+
+ 
+  
+}
